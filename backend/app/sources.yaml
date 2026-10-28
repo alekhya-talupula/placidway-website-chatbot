@@ -1,0 +1,32 @@
+# Add exact approved URLs from your assessment here. Do not guess URLs.
+
+sources:
+  - id: page1
+    title: "ITC Immunity Therapy Center - Alternative Cancer Treatment"
+    url: "https://www.placidway.com/profile/5/Alternative-Cancer-Treatment-by-ITC-Immunity-Therapy-Center"
+
+
+  - id: page2
+    title: "Alternative Adenocarcinoma Cancer Treatment in Tijuana"
+    url: "https://www.placidway.com/package/7903/Alternative-Adenocarcinoma-Cancer-Treatment-Package-in-Tijuana-Mexico-by-ITC"
+    
+  - id: page3
+    title: "Alternative Adrenal Cancer Treatment in Tijuana"
+    url: "https://www.placidway.com/package/7902/Alternative-Adrenal-Cancer-Treatment-Package-in-Tijuana-Mexico-by-ITC"
+
+  - id: page4
+    title: "Alternative Anal Cancer Treatment in Tijuana"
+    url: "https://www.placidway.com/package/7901/Alternative-Anal-Cancer-Treatment-Package-in-Tijuana-Mexico-by-ITC"
+
+  - id: page5
+    title: "ITC Tijuana Videos - Alternative Cancer Treatment"
+    url: "https://www.placidway.com/profile-videos/5/Alternative-Cancer-Treatment-by-ITC-Immunity-Therapy-Center"
+
+  - id: page6
+    title: "ITC Immunity Therapy Center - Price List"
+    url: "https://www.placidway.com/price-list/5/Alternative-Cancer-Treatment-by-ITC-Immunity-Therapy-Center"
+
+
+  - id: page7
+    title: "Alternative Medicine Cost Abroad - Compare Prices 2026"
+    url: "https://www.placidway.com/search-medical-pricings/Alternative-Medicine/All/1"
