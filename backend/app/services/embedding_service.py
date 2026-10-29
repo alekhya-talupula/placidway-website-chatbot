@@ -3,7 +3,7 @@ from sentence_transformers import SentenceTransformer
 from app.config import settings
 
 @lru_cache(maxsize=1)
-def model():
+def model():        
     return SentenceTransformer(settings.embedding_model)
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
