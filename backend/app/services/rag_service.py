@@ -1,3 +1,4 @@
+from chromadb.config import Settings as ChromaSettings
 from pathlib import Path
 from app.config import settings
 from app.services.embedding_service import embed_query
@@ -7,7 +8,10 @@ def active_collection():
     pointer = Path(settings.chroma_persist_directory) / "active_collection.txt"
     if pointer.exists():
         import chromadb
-        client = chromadb.PersistentClient(path=settings.chroma_persist_directory)
+        client = chromadb.PersistentClient(
+    path=settings.chroma_persist_directory,
+    settings=ChromaSettings(anonymized_telemetry=False),
+)
         return client.get_collection(pointer.read_text(encoding="utf-8").strip())
     return collection()
 
