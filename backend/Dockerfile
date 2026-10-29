@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY data/knowledge_export.json ./data/knowledge_export.json
 
 RUN mkdir -p /app/data
 

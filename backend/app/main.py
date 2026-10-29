@@ -5,6 +5,7 @@ import uuid
 import logging
 import re
 
+from app.services.knowledge_loader import load_knowledge_export
 from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from anthropic import APIError
@@ -16,6 +17,7 @@ from app.services.llm_service import generate_answer
 from app.services.ingestion_service import read_sources, ingest_all
 
 
+
 logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,13 @@ app = FastAPI(
     title="PlacidWay Knowledge Chatbot",
     version="0.1.0"
 )
+@app.on_event("startup")
+def load_bundled_knowledge():
+    try:
+        count = load_knowledge_export()
+        logger.info("Startup knowledge check completed. Chunks available: %s", count)
+    except Exception:
+        logger.exception("Failed to load bundled knowledge")
 
 
 # --------------------------------------------------
