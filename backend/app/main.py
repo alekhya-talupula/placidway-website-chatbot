@@ -18,6 +18,8 @@ from app.services.ingestion_service import read_sources, ingest_all
 
 logging.basicConfig(level=logging.INFO)
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(
     title="PlacidWay Knowledge Chatbot",
     version="0.1.0"
@@ -28,17 +30,32 @@ app = FastAPI(
 # CORS CONFIGURATION
 # --------------------------------------------------
 
-# Read allowed origins from backend settings.
-# Remove extra spaces and trailing slashes.
-allowed_origins = [
+# Read origins configured in backend settings.
+configured_origins = getattr(
+    settings,
+    "allowed_origins",
+    ""
+) or ""
+
+allowed_origins = {
     origin.strip().rstrip("/")
-    for origin in settings.allowed_origins.split(",")
+    for origin in configured_origins.split(",")
     if origin.strip()
-]
+}
+
+# Allow the local React/Vite development server.
+local_origins = {
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+}
+
+allowed_origins.update(local_origins)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=sorted(allowed_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=[
@@ -57,10 +74,19 @@ jobs: dict[str, dict] = {}
 
 
 def require_admin(key: str | None):
+    admin_key = getattr(
+        settings,
+        "admin_api_key",
+        None
+    )
+
     if (
-        not settings.admin_api_key
+        not admin_key
         or not key
-        or not secrets.compare_digest(key, settings.admin_api_key)
+        or not secrets.compare_digest(
+            key,
+            admin_key
+        )
     ):
         raise HTTPException(
             status_code=401,
@@ -161,6 +187,9 @@ async def health():
     try:
         count = active_collection().count()
     except Exception:
+        logger.exception(
+            "Unable to read indexed chunk count"
+        )
         count = 0
 
     return {
@@ -189,7 +218,7 @@ async def sources():
         ]
 
     except Exception:
-        logging.exception(
+        logger.exception(
             "Unable to read source registry"
         )
 
@@ -256,7 +285,7 @@ async def chat(req: ChatRequest):
         )
 
     except Exception:
-        logging.exception(
+        logger.exception(
             "Retrieval failed"
         )
 
@@ -337,7 +366,7 @@ async def chat(req: ChatRequest):
         )
 
     except (APIError, TimeoutError):
-        logging.exception(
+        logger.exception(
             "Anthropic request failed"
         )
 
@@ -346,14 +375,14 @@ async def chat(req: ChatRequest):
             detail="The answer service is temporarily unavailable."
         )
 
-    except RuntimeError as e:
-        logging.exception(
+    except RuntimeError:
+        logger.exception(
             "Answer generation failed"
         )
 
         raise HTTPException(
             status_code=503,
-            detail=str(e)
+            detail="Answer generation failed. Please try again."
         )
 
     # Keep only source links referenced by valid source labels.
@@ -399,7 +428,7 @@ async def run_refresh(job_id: str):
         }
 
     except Exception as e:
-        logging.exception(
+        logger.exception(
             "Refresh failed"
         )
 
