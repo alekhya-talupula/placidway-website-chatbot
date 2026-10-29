@@ -1,4 +1,3 @@
-
 import asyncio
 import secrets
 import uuid
@@ -17,33 +16,23 @@ from app.services.llm_service import generate_answer
 from app.services.ingestion_service import read_sources, ingest_all
 
 
-
 logging.basicConfig(level=logging.INFO)
-
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="PlacidWay Knowledge Chatbot",
-    version="0.1.0"
+    version="0.1.0",
 )
-@app.on_event("startup")
-def load_bundled_knowledge():
-    try:
-        count = load_knowledge_export()
-        logger.info("Startup knowledge check completed. Chunks available: %s", count)
-    except Exception:
-        logger.exception("Failed to load bundled knowledge")
 
 
 # --------------------------------------------------
 # CORS CONFIGURATION
 # --------------------------------------------------
 
-# Read origins configured in backend settings.
 configured_origins = getattr(
     settings,
     "allowed_origins",
-    ""
+    "",
 ) or ""
 
 allowed_origins = {
@@ -52,15 +41,14 @@ allowed_origins = {
     if origin.strip()
 }
 
-# Allow the local React/Vite development server.
-local_origins = {
+# Local development and deployed Netlify frontend.
+allowed_origins.update({
     "http://localhost:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
-}
-
-allowed_origins.update(local_origins)
+    "https://whimsical-phoenix-65f0c4.netlify.app",
+})
 
 app.add_middleware(
     CORSMiddleware,
@@ -76,6 +64,22 @@ app.add_middleware(
 
 
 # --------------------------------------------------
+# LOAD BUNDLED KNOWLEDGE AT STARTUP
+# --------------------------------------------------
+
+@app.on_event("startup")
+def load_bundled_knowledge():
+    try:
+        count = load_knowledge_export()
+        logger.info(
+            "Startup knowledge check completed. Chunks available: %s",
+            count,
+        )
+    except Exception:
+        logger.exception("Failed to load bundled knowledge")
+
+
+# --------------------------------------------------
 # ADMIN JOB STORAGE
 # --------------------------------------------------
 
@@ -86,20 +90,17 @@ def require_admin(key: str | None):
     admin_key = getattr(
         settings,
         "admin_api_key",
-        None
+        None,
     )
 
     if (
         not admin_key
         or not key
-        or not secrets.compare_digest(
-            key,
-            admin_key
-        )
+        or not secrets.compare_digest(key, admin_key)
     ):
         raise HTTPException(
             status_code=401,
-            detail="Unauthorized"
+            detail="Unauthorized",
         )
 
 
@@ -113,7 +114,7 @@ def is_appointment_request(question: str) -> bool:
     normalized = re.sub(
         r"\s+",
         " ",
-        question.lower()
+        question.lower(),
     ).strip()
 
     appointment_patterns = [
@@ -144,7 +145,7 @@ def is_medical_safety_question(question: str) -> bool:
     q = re.sub(
         r"\s+",
         " ",
-        question.lower()
+        question.lower(),
     ).strip()
 
     safety_patterns = [
@@ -196,14 +197,12 @@ async def health():
     try:
         count = active_collection().count()
     except Exception:
-        logger.exception(
-            "Unable to read indexed chunk count"
-        )
+        logger.exception("Unable to read indexed chunk count")
         count = 0
 
     return {
         "status": "ok",
-        "indexed_chunks": count
+        "indexed_chunks": count,
     }
 
 
@@ -221,19 +220,16 @@ async def sources():
                 "title": source["title"],
                 "configured": bool(
                     source.get("url", "").strip()
-                )
+                ),
             }
             for source in items
         ]
 
     except Exception:
-        logger.exception(
-            "Unable to read source registry"
-        )
-
+        logger.exception("Unable to read source registry")
         raise HTTPException(
             status_code=500,
-            detail="Source registry is unavailable."
+            detail="Source registry is unavailable.",
         )
 
 
@@ -243,20 +239,18 @@ async def sources():
 
 @app.post(
     "/api/chat",
-    response_model=ChatResponse
+    response_model=ChatResponse,
 )
 async def chat(req: ChatRequest):
-
     question = req.question.strip()
 
     if not question:
         raise HTTPException(
             status_code=422,
-            detail="Question is required."
+            detail="Question is required.",
         )
 
-    # Handle appointment requests before retrieval
-    # or Claude generation.
+    # Handle appointment requests before retrieval or generation.
     if is_appointment_request(question):
         return ChatResponse(
             answer=(
@@ -268,7 +262,7 @@ async def chat(req: ChatRequest):
                 "confirms the date and time."
             ),
             sources=[],
-            grounded=False
+            grounded=False,
         )
 
     # Handle personal medical-safety questions.
@@ -283,27 +277,23 @@ async def chat(req: ChatRequest):
                 "individual medical risks."
             ),
             sources=[],
-            grounded=False
+            grounded=False,
         )
 
-    # Retrieve relevant chunks from the knowledge base.
+    # Retrieve relevant knowledge chunks.
     try:
         hits = await asyncio.to_thread(
             retrieve,
-            question
+            question,
         )
-
     except Exception:
-        logger.exception(
-            "Retrieval failed"
-        )
-
+        logger.exception("Retrieval failed")
         raise HTTPException(
             status_code=503,
-            detail="Knowledge search is temporarily unavailable."
+            detail="Knowledge search is temporarily unavailable.",
         )
 
-    # Do not generate an answer if no evidence is found.
+    # Do not generate answers without retrieved evidence.
     if not hits:
         return ChatResponse(
             answer=(
@@ -313,7 +303,7 @@ async def chat(req: ChatRequest):
                 "verified option on the relevant PlacidWay page."
             ),
             sources=[],
-            grounded=False
+            grounded=False,
         )
 
     evidence_parts = []
@@ -327,11 +317,10 @@ async def chat(req: ChatRequest):
         url = metadata.get("url")
         title = metadata.get("title") or "Approved source"
 
-        # Skip chunks without a source URL.
+        # Ignore chunks without a source URL.
         if not url:
             continue
 
-        # Reuse label for chunks from the same page.
         if url not in source_labels:
             label = f"S{len(source_labels) + 1}"
             source_labels[url] = label
@@ -339,7 +328,7 @@ async def chat(req: ChatRequest):
             citations.append(
                 Citation(
                     title=title,
-                    url=url
+                    url=url,
                 )
             )
         else:
@@ -352,7 +341,7 @@ async def chat(req: ChatRequest):
             f"Content: {hit.get('text', '')}"
         )
 
-    # Fail safely if no usable evidence remains.
+    # Fail safely if retrieved chunks have no usable citations.
     if not evidence_parts:
         return ChatResponse(
             answer=(
@@ -361,61 +350,52 @@ async def chat(req: ChatRequest):
                 "the clinic or request a quote for confirmation."
             ),
             sources=[],
-            grounded=False
+            grounded=False,
         )
 
     evidence = "\n\n".join(evidence_parts)
 
-    # Generate the answer from retrieved evidence.
+    # Generate an answer using the retrieved evidence.
     try:
         answer = await generate_answer(
             question,
             evidence,
-            req.history
+            req.history,
         )
 
     except (APIError, TimeoutError):
-        logger.exception(
-            "Anthropic request failed"
-        )
-
+        logger.exception("Anthropic request failed")
         raise HTTPException(
             status_code=502,
-            detail="The answer service is temporarily unavailable."
+            detail="The answer service is temporarily unavailable.",
         )
 
     except RuntimeError:
-        logger.exception(
-            "Answer generation failed"
-        )
-
+        logger.exception("Answer generation failed")
         raise HTTPException(
             status_code=503,
-            detail="Answer generation failed. Please try again."
+            detail="Answer generation failed. Please try again.",
         )
 
-    # Keep only source links referenced by valid source labels.
+    # Keep only citations referenced by source labels in the answer.
     referenced_labels = {
         int(number)
         for number in re.findall(
             r"\[S(\d+)\]",
-            answer
+            answer,
         )
     }
 
     citations = [
         citation
-        for index, citation in enumerate(
-            citations,
-            start=1
-        )
+        for index, citation in enumerate(citations, start=1)
         if index in referenced_labels
     ]
 
     return ChatResponse(
         answer=answer,
         sources=citations,
-        grounded=True
+        grounded=True,
     )
 
 
@@ -425,7 +405,7 @@ async def chat(req: ChatRequest):
 
 async def run_refresh(job_id: str):
     jobs[job_id] = {
-        "status": "running"
+        "status": "running",
     }
 
     try:
@@ -433,17 +413,15 @@ async def run_refresh(job_id: str):
 
         jobs[job_id] = {
             "status": "completed",
-            "result": result
+            "result": result,
         }
 
     except Exception as e:
-        logger.exception(
-            "Refresh failed"
-        )
+        logger.exception("Refresh failed")
 
         jobs[job_id] = {
             "status": "failed",
-            "error": str(e)
+            "error": str(e),
         }
 
 
@@ -453,28 +431,28 @@ async def run_refresh(job_id: str):
 
 @app.post(
     "/api/admin/refresh",
-    status_code=202
+    status_code=202,
 )
 async def refresh(
     background: BackgroundTasks,
-    x_admin_key: str | None = Header(default=None)
+    x_admin_key: str | None = Header(default=None),
 ):
     require_admin(x_admin_key)
 
     job_id = uuid.uuid4().hex
 
     jobs[job_id] = {
-        "status": "queued"
+        "status": "queued",
     }
 
     background.add_task(
         run_refresh,
-        job_id
+        job_id,
     )
 
     return {
         "job_id": job_id,
-        "status": "queued"
+        "status": "queued",
     }
 
 
@@ -485,14 +463,14 @@ async def refresh(
 @app.get("/api/admin/refresh/{job_id}")
 async def refresh_status(
     job_id: str,
-    x_admin_key: str | None = Header(default=None)
+    x_admin_key: str | None = Header(default=None),
 ):
     require_admin(x_admin_key)
 
     if job_id not in jobs:
         raise HTTPException(
             status_code=404,
-            detail="Job not found."
+            detail="Job not found.",
         )
 
     return jobs[job_id]
