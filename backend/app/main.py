@@ -23,17 +23,35 @@ app = FastAPI(
     version="0.1.0"
 )
 
+
+# --------------------------------------------------
+# CORS CONFIGURATION
+# --------------------------------------------------
+
+# Read allowed origins from backend settings.
+# Remove extra spaces and trailing slashes.
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in settings.allowed_origins.split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        x.strip()
-        for x in settings.allowed_origins.split(",")
-        if x.strip()
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-Admin-Key"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "X-Admin-Key",
+        "Authorization",
+    ],
 )
+
+
+# --------------------------------------------------
+# ADMIN JOB STORAGE
+# --------------------------------------------------
 
 jobs: dict[str, dict] = {}
 
@@ -50,9 +68,18 @@ def require_admin(key: str | None):
         )
 
 
+# --------------------------------------------------
+# APPOINTMENT REQUEST DETECTION
+# --------------------------------------------------
+
 def is_appointment_request(question: str) -> bool:
     """Identify requests to book, schedule, or confirm appointments."""
-    normalized = re.sub(r"\s+", " ", question.lower()).strip()
+
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        question.lower()
+    ).strip()
 
     appointment_patterns = [
         r"\bbook\b.{0,50}\bappointment\b",
@@ -72,9 +99,18 @@ def is_appointment_request(question: str) -> bool:
     )
 
 
+# --------------------------------------------------
+# MEDICAL SAFETY QUESTION DETECTION
+# --------------------------------------------------
+
 def is_medical_safety_question(question: str) -> bool:
     """Identify personal medical safety and risk questions."""
-    q = re.sub(r"\s+", " ", question.lower()).strip()
+
+    q = re.sub(
+        r"\s+",
+        " ",
+        question.lower()
+    ).strip()
 
     safety_patterns = [
         r"\bis .{0,40} safe for me\b",
@@ -105,10 +141,20 @@ def is_medical_safety_question(question: str) -> bool:
     ]
 
     return (
-        any(re.search(pattern, q) for pattern in safety_patterns)
-        and any(term in q for term in medical_terms)
+        any(
+            re.search(pattern, q)
+            for pattern in safety_patterns
+        )
+        and any(
+            term in q
+            for term in medical_terms
+        )
     )
 
+
+# --------------------------------------------------
+# HEALTH ENDPOINT
+# --------------------------------------------------
 
 @app.get("/api/health")
 async def health():
@@ -123,6 +169,10 @@ async def health():
     }
 
 
+# --------------------------------------------------
+# SOURCES ENDPOINT
+# --------------------------------------------------
+
 @app.get("/api/sources")
 async def sources():
     try:
@@ -131,21 +181,34 @@ async def sources():
         return [
             {
                 "title": source["title"],
-                "configured": bool(source.get("url", "").strip())
+                "configured": bool(
+                    source.get("url", "").strip()
+                )
             }
             for source in items
         ]
 
     except Exception:
-        logging.exception("Unable to read source registry")
+        logging.exception(
+            "Unable to read source registry"
+        )
+
         raise HTTPException(
             status_code=500,
             detail="Source registry is unavailable."
         )
 
 
-@app.post("/api/chat", response_model=ChatResponse)
+# --------------------------------------------------
+# CHAT ENDPOINT
+# --------------------------------------------------
+
+@app.post(
+    "/api/chat",
+    response_model=ChatResponse
+)
 async def chat(req: ChatRequest):
+
     question = req.question.strip()
 
     if not question:
@@ -154,7 +217,8 @@ async def chat(req: ChatRequest):
             detail="Question is required."
         )
 
-    # Handle appointment requests before retrieval or Claude generation.
+    # Handle appointment requests before retrieval
+    # or Claude generation.
     if is_appointment_request(question):
         return ChatResponse(
             answer=(
@@ -169,7 +233,7 @@ async def chat(req: ChatRequest):
             grounded=False
         )
 
-    # Handle personal medical-safety questions before retrieval.
+    # Handle personal medical-safety questions.
     if is_medical_safety_question(question):
         return ChatResponse(
             answer=(
@@ -186,10 +250,16 @@ async def chat(req: ChatRequest):
 
     # Retrieve relevant chunks from the knowledge base.
     try:
-        hits = await asyncio.to_thread(retrieve, question)
+        hits = await asyncio.to_thread(
+            retrieve,
+            question
+        )
 
     except Exception:
-        logging.exception("Retrieval failed")
+        logging.exception(
+            "Retrieval failed"
+        )
+
         raise HTTPException(
             status_code=503,
             detail="Knowledge search is temporarily unavailable."
@@ -215,6 +285,7 @@ async def chat(req: ChatRequest):
     # Assign one source label per unique URL.
     for hit in hits:
         metadata = hit.get("metadata") or {}
+
         url = metadata.get("url")
         title = metadata.get("title") or "Approved source"
 
@@ -222,7 +293,7 @@ async def chat(req: ChatRequest):
         if not url:
             continue
 
-        # Reuse the label for chunks from the same page.
+        # Reuse label for chunks from the same page.
         if url not in source_labels:
             label = f"S{len(source_labels) + 1}"
             source_labels[url] = label
@@ -266,14 +337,20 @@ async def chat(req: ChatRequest):
         )
 
     except (APIError, TimeoutError):
-        logging.exception("Anthropic request failed")
+        logging.exception(
+            "Anthropic request failed"
+        )
+
         raise HTTPException(
             status_code=502,
             detail="The answer service is temporarily unavailable."
         )
 
     except RuntimeError as e:
-        logging.exception("Answer generation failed")
+        logging.exception(
+            "Answer generation failed"
+        )
+
         raise HTTPException(
             status_code=503,
             detail=str(e)
@@ -282,12 +359,18 @@ async def chat(req: ChatRequest):
     # Keep only source links referenced by valid source labels.
     referenced_labels = {
         int(number)
-        for number in re.findall(r"\[S(\d+)\]", answer)
+        for number in re.findall(
+            r"\[S(\d+)\]",
+            answer
+        )
     }
 
     citations = [
         citation
-        for index, citation in enumerate(citations, start=1)
+        for index, citation in enumerate(
+            citations,
+            start=1
+        )
         if index in referenced_labels
     ]
 
@@ -298,10 +381,14 @@ async def chat(req: ChatRequest):
     )
 
 
-# Refresh the website knowledge base.
-# This function must remain separate from chat().
+# --------------------------------------------------
+# KNOWLEDGE BASE REFRESH
+# --------------------------------------------------
+
 async def run_refresh(job_id: str):
-    jobs[job_id] = {"status": "running"}
+    jobs[job_id] = {
+        "status": "running"
+    }
 
     try:
         result = await ingest_all()
@@ -312,7 +399,9 @@ async def run_refresh(job_id: str):
         }
 
     except Exception as e:
-        logging.exception("Refresh failed")
+        logging.exception(
+            "Refresh failed"
+        )
 
         jobs[job_id] = {
             "status": "failed",
@@ -320,7 +409,14 @@ async def run_refresh(job_id: str):
         }
 
 
-@app.post("/api/admin/refresh", status_code=202)
+# --------------------------------------------------
+# ADMIN REFRESH ENDPOINT
+# --------------------------------------------------
+
+@app.post(
+    "/api/admin/refresh",
+    status_code=202
+)
 async def refresh(
     background: BackgroundTasks,
     x_admin_key: str | None = Header(default=None)
@@ -328,15 +424,25 @@ async def refresh(
     require_admin(x_admin_key)
 
     job_id = uuid.uuid4().hex
-    jobs[job_id] = {"status": "queued"}
 
-    background.add_task(run_refresh, job_id)
+    jobs[job_id] = {
+        "status": "queued"
+    }
+
+    background.add_task(
+        run_refresh,
+        job_id
+    )
 
     return {
         "job_id": job_id,
         "status": "queued"
     }
 
+
+# --------------------------------------------------
+# ADMIN REFRESH STATUS
+# --------------------------------------------------
 
 @app.get("/api/admin/refresh/{job_id}")
 async def refresh_status(
